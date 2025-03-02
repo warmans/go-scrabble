@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const NumPlayerLetters = 7
@@ -19,9 +20,74 @@ const (
 	CellAny   CellState = ""
 )
 
+type PlacementResult struct {
+	cells []Cell
+}
+
+func (r *PlacementResult) Score() int {
+	wordTotal := 0
+	var wordBonuses []CellBonusType
+	for _, c := range r.cells {
+		letterScore := LetterScores[c.Char]
+		switch c.Bonus {
+		case NoBonusType:
+			wordTotal += letterScore
+		case DoubleLetterScoreType:
+			wordTotal += letterScore * 2
+		case TripleLetterScoreType:
+			wordTotal += letterScore * 3
+		case DoubleWordScoreType:
+			wordTotal += letterScore
+			wordBonuses = append(wordBonuses, c.Bonus)
+		case TripleWordScoreType:
+			wordTotal += letterScore
+			wordBonuses = append(wordBonuses, c.Bonus)
+		}
+	}
+	for _, b := range wordBonuses {
+		switch b {
+		case DoubleWordScoreType:
+			wordTotal = wordTotal * 2
+		case TripleWordScoreType:
+			wordTotal = wordTotal * 3
+		}
+	}
+	if len(r.cells) == NumPlayerLetters {
+		wordTotal += 50
+	}
+	return wordTotal
+}
+
+type CellBonusType string
+
+const (
+	NoBonusType           CellBonusType = ""
+	DoubleLetterScoreType CellBonusType = "double_letter_score"
+	DoubleWordScoreType   CellBonusType = "double_word_score"
+	TripleLetterScoreType CellBonusType = "triple_letter_score"
+	TripleWordScoreType   CellBonusType = "triple_word_score"
+)
+
 type Cell struct {
 	Index int
 	Char  rune
+	Bonus CellBonusType
+}
+
+func (c Cell) Empty() bool {
+	return c.Char == 0
+}
+
+func (c Cell) String() string {
+	return string(c.Char)
+}
+
+func (c Cell) IndexString() string {
+	return fmt.Sprintf("%d", c.Index)
+}
+
+func (c Cell) LetterScoreString() string {
+	return fmt.Sprintf("%d", LetterScores[c.Char])
 }
 
 type Overlap struct {
@@ -54,26 +120,29 @@ func (b Board) getCellIndex(placement Placement, letterIdx int) (int64, error) {
 	return cellIndex, nil
 }
 
-func (b Board) isValidWordPlacement(placement Placement, word string) ([]rune, int, error) {
+func (b Board) isValidWordPlacement(placement Placement, word string, firstWord bool) ([]rune, error) {
 
 	lettersSpent := []rune{}
 	overlaps := 0
+	cellsCovered := []int64{}
+
 	for i, letter := range word {
 		isOverlapping := false
 
 		cellIndex, err := b.getCellIndex(placement, i)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
+		cellsCovered = append(cellsCovered, cellIndex)
 		// 1. does the word fit within the board
 		cell := b.GetCell(cellIndex, CellAny)
 		if cell == nil {
-			return nil, 0, fmt.Errorf("word does not fit on the board")
+			return nil, fmt.Errorf("word does not fit on the board")
 		}
 
 		// 2. is there a valid overlap or empty space
 		if cell.Char != 0 && cell.Char != letter {
-			return nil, 0, fmt.Errorf("invalid overlap, %s cannot be placed on %s", string(letter), string(cell.Char))
+			return nil, fmt.Errorf("invalid overlap, %s cannot be placed on %s", string(letter), string(cell.Char))
 		}
 		if cell.Char == letter {
 			overlaps++
@@ -87,44 +156,63 @@ func (b Board) isValidWordPlacement(placement Placement, word string) ([]rune, i
 		// 3. Does the word fit into the given placement considering neighbouring cells
 		if placement.Direction == Across {
 			if i == 0 && neighbours.L {
-				return nil, 0, fmt.Errorf("first letter is too close to another word")
+				return nil, fmt.Errorf("first letter is too close to another word")
 			}
 			if i == len(word)-1 && neighbours.R {
-				return nil, 0, fmt.Errorf("last letter is too close to another word")
+				return nil, fmt.Errorf("last letter is too close to another word")
 			}
 			// if the letter is overlapping there will be other letters touching the sides
 			if !isOverlapping && (neighbours.A || neighbours.B) {
-				return nil, 0, fmt.Errorf("another word is too close above or below")
+				return nil, fmt.Errorf("another word is too close above or below")
 			}
 		} else {
 			if i == 0 && neighbours.A {
-				return nil, 0, fmt.Errorf("first letter is too close to another word")
+				return nil, fmt.Errorf("first letter is too close to another word")
 			}
 			if i == len(word)-1 && neighbours.B {
-				return nil, 0, fmt.Errorf("last letter is too close to another word")
+				return nil, fmt.Errorf("last letter is too close to another word")
 			}
 			if !isOverlapping && (neighbours.R || neighbours.L) {
-				return nil, 0, fmt.Errorf("another word is too close to the left or right")
+				return nil, fmt.Errorf("another word is too close to the left or right")
 			}
 		}
 	}
 	if overlaps == len(word) {
-		return nil, 0, fmt.Errorf("word completely overlaps another word")
+		return nil, fmt.Errorf("word completely overlaps another word")
 	}
 
-	return lettersSpent, overlaps, nil
+	if !firstWord && overlaps == 0 {
+		return nil, fmt.Errorf("word must overlap at least one other word")
+	}
+
+	if firstWord {
+		centerCell := b.getCenterCellIdx()
+		centerCellCovered := false
+		for _, cellIdx := range cellsCovered {
+			if cellIdx == centerCell {
+				centerCellCovered = true
+			}
+		}
+		if !centerCellCovered {
+			return nil, fmt.Errorf("first word must overlap the center of the board (cell %d)", centerCell)
+		}
+	}
+
+	return lettersSpent, nil
 }
 
-func (b Board) placeWord(placement Placement, word string) error {
+func (b Board) placeWord(placement Placement, word string) (*PlacementResult, error) {
+	result := &PlacementResult{cells: make([]Cell, 0)}
 	for i, letter := range word {
 		cellIndex, err := b.getCellIndex(placement, i)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		b.SetCell(cellIndex, letter)
+		cell, _ := b.SetCell(cellIndex, letter)
+		result.cells = append(result.cells, cell)
 	}
-	return nil
+	return result, nil
 }
 
 func (b Board) GetCell(cellID int64, state CellState) *Cell {
@@ -135,10 +223,10 @@ func (b Board) GetCell(cellID int64, state CellState) *Cell {
 	for _, row := range b {
 		for _, cell := range row {
 			if int64(cell.Index) == cellID {
-				if state == CellEmpty && cell.Char != 0 {
+				if state == CellEmpty && !cell.Empty() {
 					return nil
 				}
-				if state == CellFull && cell.Char == 0 {
+				if state == CellFull && cell.Empty() {
 					return nil
 				}
 				return &cell
@@ -148,23 +236,23 @@ func (b Board) GetCell(cellID int64, state CellState) *Cell {
 	return nil
 }
 
-func (b Board) SetCell(cellID int64, letter rune) bool {
+func (b Board) SetCell(cellID int64, letter rune) (Cell, bool) {
 	curID := int64(0)
 	set := false
+	var cell Cell
 	for rowIdx, row := range b {
 		for colIdx := range row {
 			curID++
 			if curID == cellID {
-				if b[rowIdx][colIdx].Char == 0 {
+				if b[rowIdx][colIdx].Empty() {
 					set = true
 				}
 				b[rowIdx][colIdx].Char = letter
+				cell = b[rowIdx][colIdx]
 			}
 		}
 	}
-	// todo: perhaps it should return any bonuses for "set" letters here?
-	// e.g. return [doubleLetterScore(letter), doubleWordScore()]
-	return set
+	return cell, set
 }
 
 func (b Board) nonEmptyNeighbouringCells(cellID int64) Overlap {
@@ -176,6 +264,12 @@ func (b Board) nonEmptyNeighbouringCells(cellID int64) Overlap {
 	}
 }
 
+func (b Board) getCenterCellIdx() int64 {
+	size := float64(len(b))
+	middle := math.Ceil(size / float64(2))
+	return int64(middle + (size * math.Floor(size/float64(2))))
+}
+
 func NewBoard(size int) Board {
 	grid := make(Board, size)
 	for y := range size {
@@ -185,6 +279,11 @@ func NewBoard(size int) Board {
 	for rowNum := range grid {
 		for colNum := range grid[rowNum] {
 			grid[rowNum][colNum].Index = index
+
+			if bonus, ok := StandardBonusMap[index]; ok {
+				grid[rowNum][colNum].Bonus = bonus
+			}
+
 			index++
 		}
 	}
@@ -194,6 +293,7 @@ func NewBoard(size int) Board {
 type Player struct {
 	Name    string
 	Letters []rune
+	Score   int
 }
 
 func (p *Player) hasLetters(letters []rune) bool {
@@ -259,11 +359,19 @@ func (p *Player) removeLetters(letters []rune) error {
 	return nil
 }
 
+func MustParsePlacement(placementStr string) Placement {
+	place, err := ParsePlacement(placementStr)
+	if err != nil {
+		panic(err)
+	}
+	return place
+}
+
 func ParsePlacement(placementStr string) (Placement, error) {
 	p := Placement{}
-	if strings.HasSuffix(placementStr, "D") {
+	if strings.HasPrefix(placementStr, "D") {
 		p.Direction = "D"
-	} else if strings.HasSuffix(placementStr, "A") {
+	} else if strings.HasPrefix(placementStr, "A") {
 		p.Direction = "A"
 	} else {
 		return p, fmt.Errorf("placement must start with either D or A")
@@ -300,6 +408,7 @@ func NewGame() *Game {
 		CurrentPlayer: 0,
 		SpareLetters:  makeLetterBag(),
 		Players:       make([]*Player, 0),
+		lock:          &sync.RWMutex{},
 	}
 
 	return game
@@ -311,11 +420,12 @@ type Game struct {
 	CurrentPlayer  int
 	SpareLetters   []rune
 	NumWordsPlaced int
+	lock           *sync.RWMutex
 }
 
 func (g *Game) AddPlayer(name string) error {
 	g.Players = append(g.Players, &Player{Name: name, Letters: make([]rune, 0)})
-	if err := g.refillPlayerLetters(name); err != nil {
+	if err := g.refillPlayerLetters(len(g.Players) - 1); err != nil {
 		return err
 	}
 	return nil
@@ -323,20 +433,21 @@ func (g *Game) AddPlayer(name string) error {
 
 // PlaceWord places a word on the game, the word must be a whole word even if it is just adding letters
 // to an existing word. Any exising letters are not spent by the player.
-func (g *Game) PlaceWord(place Placement, playerName string, word string) error {
-	player, err := g.getPlayer(playerName)
+func (g *Game) PlaceWord(place Placement, word string) error {
+	word = strings.ToUpper(word)
+
+	g.lock.Lock()
+	defer g.lock.Unlock()
+
+	player, err := g.getCurrentPlayer()
 	if err != nil {
 		return err
 	}
 
 	// is the word valid
-	lettersRequired, overlaps, err := g.Board.isValidWordPlacement(place, word)
+	lettersRequired, err := g.Board.isValidWordPlacement(place, word, g.NumWordsPlaced == 0)
 	if err != nil {
 		return err
-	}
-
-	if g.NumWordsPlaced > 0 && overlaps == 0 {
-		return fmt.Errorf("word must overlap at least one other word")
 	}
 
 	// do they have the letters required to make the word considering overlaps
@@ -350,32 +461,64 @@ func (g *Game) PlaceWord(place Placement, playerName string, word string) error 
 	}
 
 	// update the board
-	if err := g.Board.placeWord(place, word); err != nil {
+	result, err := g.Board.placeWord(place, word)
+	if err != nil {
 		// we're in trouble here because the letters have already been removed from the player
 		return err
 	}
 
-	if err := g.refillPlayerLetters(playerName); err != nil {
+	if err := g.refillPlayerLetters(g.CurrentPlayer); err != nil {
 		return err
 	}
 
-	//todo: if len(requiredLetters) == 7 they get an additional 50 points
+	// scoring
+	player.Score += result.Score()
+
+	g.nextPlayer()
 
 	g.NumWordsPlaced++
 	return nil
 }
 
-func (g *Game) getPlayer(name string) (*Player, error) {
-	for _, v := range g.Players {
-		if v.Name == name {
+func (g *Game) getPlayer(idx int) (*Player, error) {
+	for k, v := range g.Players {
+		if k == idx {
 			return v, nil
 		}
 	}
-	return nil, fmt.Errorf("unknown player: %s", name)
+	return nil, fmt.Errorf("unknown player index: %d", idx)
 }
 
-func (g *Game) refillPlayerLetters(name string) error {
-	player, err := g.getPlayer(name)
+func (g *Game) getCurrentPlayer() (*Player, error) {
+	for k, v := range g.Players {
+		if k == g.CurrentPlayer {
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf("unknown current player index: %d", g.CurrentPlayer)
+}
+
+func (g *Game) getCurrentPlayerName() string {
+	player, err := g.getCurrentPlayer()
+	if err != nil {
+		return "Unknown"
+	}
+	return player.Name
+}
+
+func (g *Game) getNextPlayerIdx() int {
+	if g.CurrentPlayer+1 > len(g.Players)-1 {
+		return 0 // wrap around
+	}
+	return g.CurrentPlayer + 1
+}
+
+func (g *Game) nextPlayer() {
+	g.CurrentPlayer = g.getNextPlayerIdx()
+}
+
+func (g *Game) refillPlayerLetters(idx int) error {
+	player, err := g.getPlayer(idx)
 	if err != nil {
 		return err
 	}

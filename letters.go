@@ -60,6 +60,76 @@ var LetterDistribution = map[rune]int{
 	'_': 2,
 }
 
+// StandardBonusMap is a map of bonuses by cell index
+var StandardBonusMap = map[int]CellBonusType{
+	1:   TripleWordScoreType,
+	8:   TripleWordScoreType,
+	15:  TripleWordScoreType,
+	106: TripleWordScoreType,
+	120: TripleWordScoreType,
+	211: TripleWordScoreType,
+	218: TripleWordScoreType,
+	225: TripleWordScoreType,
+
+	// Triple Letter Scores
+	21:  TripleLetterScoreType,
+	25:  TripleLetterScoreType,
+	81:  TripleLetterScoreType,
+	85:  TripleLetterScoreType,
+	141: TripleLetterScoreType,
+	145: TripleLetterScoreType,
+	201: TripleLetterScoreType,
+	205: TripleLetterScoreType,
+	77:  TripleLetterScoreType,
+	137: TripleLetterScoreType,
+	89:  TripleLetterScoreType,
+	149: TripleLetterScoreType,
+
+	// Double Word Score
+	17:  DoubleWordScoreType,
+	33:  DoubleWordScoreType,
+	49:  DoubleWordScoreType,
+	65:  DoubleWordScoreType,
+	29:  DoubleWordScoreType,
+	43:  DoubleWordScoreType,
+	57:  DoubleWordScoreType,
+	71:  DoubleWordScoreType,
+	197: DoubleWordScoreType,
+	183: DoubleWordScoreType,
+	169: DoubleWordScoreType,
+	155: DoubleWordScoreType,
+	209: DoubleWordScoreType,
+	193: DoubleWordScoreType,
+	177: DoubleWordScoreType,
+	161: DoubleWordScoreType,
+
+	// Double Letter Score
+	4:   DoubleLetterScoreType,
+	12:  DoubleLetterScoreType,
+	214: DoubleLetterScoreType,
+	222: DoubleLetterScoreType,
+	46:  DoubleLetterScoreType,
+	166: DoubleLetterScoreType,
+	60:  DoubleLetterScoreType,
+	180: DoubleLetterScoreType,
+	93:  DoubleLetterScoreType,
+	123: DoubleLetterScoreType,
+	109: DoubleLetterScoreType,
+	103: DoubleLetterScoreType,
+	133: DoubleLetterScoreType,
+	117: DoubleLetterScoreType,
+	97:  DoubleLetterScoreType,
+	99:  DoubleLetterScoreType,
+	127: DoubleLetterScoreType,
+	129: DoubleLetterScoreType,
+	37:  DoubleLetterScoreType,
+	53:  DoubleLetterScoreType,
+	39:  DoubleLetterScoreType,
+	187: DoubleLetterScoreType,
+	189: DoubleLetterScoreType,
+	173: DoubleLetterScoreType,
+}
+
 func makeLetterBag() []rune {
 	bag := []rune{}
 	for letter, count := range LetterDistribution {

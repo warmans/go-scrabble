@@ -13,19 +13,20 @@ func main() {
 	if err := game.AddPlayer(defaultPlayerName); err != nil {
 		panic(err)
 	}
-	game.Players[0].Letters = []rune{'f', 'o', 'o', 'f'}
-	if err := game.PlaceWord(scrabble.Placement{CellId: 1, Direction: scrabble.Across}, defaultPlayerName, "foof"); err != nil {
+	game.Players[0].Letters = []rune{'F', 'O', 'O', 'F'}
+	if err := game.PlaceWord(scrabble.MustParsePlacement("A113"), "foof"); err != nil {
 		panic(err)
 	}
 	fmt.Println("Letters remaining: ", scrabble.RuneSliceAsString(game.Players[0].Letters))
+	fmt.Println("Score: ", game.Players[0].Score)
 
-	game.Players[0].Letters = []rune{'f', 'o', 'o', 'f'}
-	if err := game.PlaceWord(scrabble.Placement{CellId: 4, Direction: scrabble.Down}, defaultPlayerName, "foof"); err != nil {
+	game.Players[0].Letters = []rune{'F', 'O', 'O', 'F'}
+	if err := game.PlaceWord(scrabble.MustParsePlacement("D116"), "foof"); err != nil {
 		panic(err)
 	}
 
-	game.Players[0].Letters = []rune{'f', 'o', 'o', 'f'}
-	if err := game.PlaceWord(scrabble.Placement{CellId: 33, Direction: scrabble.Across}, defaultPlayerName, "foof"); err != nil {
+	game.Players[0].Letters = []rune{'F', 'O', 'O', 'F'}
+	if err := game.PlaceWord(scrabble.MustParsePlacement("A145"), "foof"); err != nil {
 		panic(err)
 	}
 
