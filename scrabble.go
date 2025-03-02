@@ -140,13 +140,15 @@ func (b Board) isValidWordPlacement(placement Placement, word string, firstWord 
 		}
 
 		// 2. is there a valid overlap or empty space
-		if cell.Char != 0 && cell.Char != letter {
+		if !cell.Empty() && cell.Char != letter {
 			return nil, fmt.Errorf("invalid overlap, %s cannot be placed on %s", string(letter), string(cell.Char))
 		}
 		if cell.Char == letter {
+			// letter already exits
 			overlaps++
 			isOverlapping = true
 		} else {
+			// user must have letter
 			lettersSpent = append(lettersSpent, letter)
 		}
 
@@ -295,66 +297,55 @@ type Player struct {
 	Score   int
 }
 
-func (p *Player) hasLetters(letters []rune) bool {
-	numBlanks := 0
-	for _, v := range p.Letters {
-		if v == '_' {
-			numBlanks++
+func (p *Player) getUsedLetters(letters []rune) (map[rune]int, bool) {
+	lettermap := map[rune]int{}
+
+	foundAll := true
+	for _, l := range p.Letters {
+		if _, ok := lettermap[l]; ok {
+			lettermap[l]++
+		} else {
+			lettermap[l] = 1
 		}
 	}
-	matchedLetters := 0
-	for _, v := range letters {
+	for _, want := range letters {
 		found := false
-		for _, l := range p.Letters {
-			if l == v {
+		if avail, ok := lettermap[want]; ok && avail > 0 {
+			found = true
+			lettermap[want]--
+		}
+		if !found {
+			// if they have a blank they can use that instead for any letter
+			if avail, ok := lettermap['_']; ok && avail > 0 {
 				found = true
+				lettermap['_']--
 			}
 		}
-		if found {
-			matchedLetters++
+		if !found {
+			foundAll = false
 		}
 	}
-	return matchedLetters == len(letters) || matchedLetters+numBlanks > len(letters)
+
+	return lettermap, foundAll
+}
+
+func (p *Player) hasLetters(letters []rune) bool {
+	_, foundAll := p.getUsedLetters(letters)
+	return foundAll
 }
 
 func (p *Player) removeLetters(letters []rune) error {
-	originalLetters := make([]rune, 0, 7)
-	copy(originalLetters, p.Letters)
-
-	removed := 0
-	for _, l := range letters {
-		newLetters := make([]rune, 0, 7)
-		for _, j := range p.Letters {
-			if l != j {
-				newLetters = append(newLetters, j)
-			} else {
-				removed++
-			}
-		}
-		p.Letters = newLetters
+	newLetters := make([]rune, 0, 7)
+	usageMap, foundAll := p.getUsedLetters(letters)
+	if !foundAll {
+		return fmt.Errorf("all letters were not found to be removed")
 	}
-
-	// apparently there are blanks to be removed
-	blanksRemoved := 0
-	numBlanksToRemove := len(letters) - removed
-	for range numBlanksToRemove {
-		newLetters := make([]rune, 0, 7)
-		for _, j := range p.Letters {
-			if j == '_' {
-				blanksRemoved++
-			} else {
-				newLetters = append(newLetters, j)
-			}
+	for letter, avail := range usageMap {
+		for range avail {
+			newLetters = append(newLetters, letter)
 		}
 	}
-
-	if numBlanksToRemove > blanksRemoved {
-		// something is fucked up here, because we should have already asserted that the player has all the
-		// required letters.
-		// revert the changes and return an error.
-		p.Letters = originalLetters
-		return fmt.Errorf("not enough letters, or blanks to remove")
-	}
+	p.Letters = newLetters
 	return nil
 }
 
@@ -418,6 +409,7 @@ type Game struct {
 	CurrentPlayer  int
 	SpareLetters   []rune
 	NumWordsPlaced int
+	Complete       bool
 }
 
 func (g *Game) AddPlayer(name string) error {
@@ -432,8 +424,8 @@ func (g *Game) AddPlayer(name string) error {
 // to an existing word. Any exising letters are not spent by the player.
 func (g *Game) PlaceWord(place Placement, word string) error {
 	word = strings.ToUpper(word)
-	
-	player, err := g.getCurrentPlayer()
+
+	player, err := g.GetCurrentPlayer()
 	if err != nil {
 		return err
 	}
@@ -468,7 +460,7 @@ func (g *Game) PlaceWord(place Placement, word string) error {
 	// scoring
 	player.Score += result.Score()
 
-	g.nextPlayer()
+	g.NextPlayer()
 
 	g.NumWordsPlaced++
 	return nil
@@ -483,7 +475,7 @@ func (g *Game) getPlayer(idx int) (*Player, error) {
 	return nil, fmt.Errorf("unknown player index: %d", idx)
 }
 
-func (g *Game) getCurrentPlayer() (*Player, error) {
+func (g *Game) GetCurrentPlayer() (*Player, error) {
 	for k, v := range g.Players {
 		if k == g.CurrentPlayer {
 			return v, nil
@@ -493,7 +485,7 @@ func (g *Game) getCurrentPlayer() (*Player, error) {
 }
 
 func (g *Game) getCurrentPlayerName() string {
-	player, err := g.getCurrentPlayer()
+	player, err := g.GetCurrentPlayer()
 	if err != nil {
 		return "Unknown"
 	}
@@ -507,8 +499,19 @@ func (g *Game) getNextPlayerIdx() int {
 	return g.CurrentPlayer + 1
 }
 
-func (g *Game) nextPlayer() {
-	g.CurrentPlayer = g.getNextPlayerIdx()
+func (g *Game) NextPlayer() {
+	maxAttempts := len(g.Players)
+	for maxAttempts > 0 {
+		next := g.getNextPlayerIdx()
+		if len(g.Players[next].Letters) > 0 {
+			g.CurrentPlayer = next
+			break
+		}
+		maxAttempts--
+	}
+	if maxAttempts == 0 {
+		g.Complete = true
+	}
 }
 
 func (g *Game) refillPlayerLetters(idx int) error {
@@ -522,6 +525,22 @@ func (g *Game) refillPlayerLetters(idx int) error {
 		}
 		letterIdx := rand.IntN(len(g.SpareLetters) - 1)
 		player.Letters = append(player.Letters, g.SpareLetters[letterIdx])
-		g.SpareLetters = slices.Delete(g.SpareLetters, letterIdx, letterIdx)
+		g.SpareLetters = slices.Delete(g.SpareLetters, letterIdx, letterIdx+1)
 	}
+}
+
+func dumpLetters(letters []rune) string {
+	out := ""
+	for _, v := range letters {
+		out = out + string(v)
+	}
+	return out
+}
+
+func dumpLetterMap(letters map[rune]int) string {
+	out := ""
+	for letter, avail := range letters {
+		out = out + fmt.Sprintf("%s:%d", string(letter), avail)
+	}
+	return out
 }

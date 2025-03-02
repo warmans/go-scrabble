@@ -206,13 +206,21 @@ func RenderPNG(c *Game, width, height int, opts ...RenderOption) (*gg.Context, e
 		110+float64(options.borderWidth)/2,
 	)
 
+	dc.SetColor(color.Black)
+	dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 20}))
+	dc.DrawString(
+		fmt.Sprintf("TILES LEFT: %d", len(c.SpareLetters)),
+		float64(gridWidth)+float64(options.borderWidth),
+		150+float64(options.borderWidth)/2,
+	)
+
 	//scores
 	dc.SetColor(color.Black)
 	dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 20}))
 	dc.DrawString(
 		"PLAYER SCORES",
 		float64(gridWidth)+float64(options.borderWidth),
-		160+float64(options.borderWidth)/2,
+		180+float64(options.borderWidth)/2,
 	)
 
 	dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 18}))
@@ -227,7 +235,7 @@ func RenderPNG(c *Game, width, height int, opts ...RenderOption) (*gg.Context, e
 		dc.DrawString(
 			fmt.Sprintf("%s: %d%s", p.Name, p.Score, suffix),
 			float64(gridWidth)+float64(options.borderWidth),
-			170+float64(options.borderWidth)/2+(25*float64(i+1)),
+			190+float64(options.borderWidth)/2+(25*float64(i+1)),
 		)
 	}
 
