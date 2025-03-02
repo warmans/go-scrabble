@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 const NumPlayerLetters = 7
@@ -408,7 +407,6 @@ func NewGame() *Game {
 		CurrentPlayer: 0,
 		SpareLetters:  makeLetterBag(),
 		Players:       make([]*Player, 0),
-		lock:          &sync.RWMutex{},
 	}
 
 	return game
@@ -420,7 +418,6 @@ type Game struct {
 	CurrentPlayer  int
 	SpareLetters   []rune
 	NumWordsPlaced int
-	lock           *sync.RWMutex
 }
 
 func (g *Game) AddPlayer(name string) error {
@@ -435,10 +432,7 @@ func (g *Game) AddPlayer(name string) error {
 // to an existing word. Any exising letters are not spent by the player.
 func (g *Game) PlaceWord(place Placement, word string) error {
 	word = strings.ToUpper(word)
-
-	g.lock.Lock()
-	defer g.lock.Unlock()
-
+	
 	player, err := g.getCurrentPlayer()
 	if err != nil {
 		return err
