@@ -9,7 +9,7 @@ import (
 const defaultPlayerName = "default"
 
 func main() {
-	game := scrabble.NewGame()
+	game := scrabble.NewClassicGame()
 	if err := game.AddPlayer(defaultPlayerName); err != nil {
 		panic(err)
 	}

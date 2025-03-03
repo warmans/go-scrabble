@@ -5,7 +5,7 @@ import (
 	"io"
 )
 
-func PrintGame(game *Game, writer io.Writer) {
+func PrintGame(game *Classic, writer io.Writer) {
 	celIdx := 1
 	for _, row := range game.Board {
 		fmt.Fprintf(writer, "|")

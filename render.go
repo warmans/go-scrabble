@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"log"
 	"strings"
+	"time"
 )
 
 var font *truetype.Font
@@ -83,7 +84,7 @@ func WithLabelColor(cl color.Color) RenderOption {
 	}
 }
 
-func RenderPNG(c *Game, width, height int, opts ...RenderOption) (*gg.Context, error) {
+func RenderClassicPNG(c *Classic, width, height int, opts ...RenderOption) (*gg.Context, error) {
 	options := resolveRenderOptions(opts...)
 
 	gridWidth := height - options.borderWidth
@@ -236,6 +237,208 @@ func RenderPNG(c *Game, width, height int, opts ...RenderOption) (*gg.Context, e
 			fmt.Sprintf("%s: %d%s", p.Name, p.Score, suffix),
 			float64(gridWidth)+float64(options.borderWidth),
 			190+float64(options.borderWidth)/2+(25*float64(i+1)),
+		)
+	}
+
+	return dc, nil
+}
+
+func RenderScrabulousPNG(c *Scrabulous, width, height int, opts ...RenderOption) (*gg.Context, error) {
+	options := resolveRenderOptions(opts...)
+
+	gridWidth := height - options.borderWidth
+	gridHeight := height - options.borderWidth
+
+	cellWidth := float64(gridWidth / len(c.Board))
+	cellHeight := float64(gridHeight / len(c.Board))
+	cellOffset := 0.0
+	if options.borderWidth > 0 {
+		cellOffset = float64(options.borderWidth) / 2
+	}
+
+	dc := gg.NewContext(width, height)
+	dc.SetColor(options.backgroundColor)
+	dc.Clear()
+
+	pendingWord := map[int]Cell{}
+	if best := c.BestPendingWord(); best != nil {
+		for _, c := range best.Result.Cells {
+			pendingWord[c.Index] = c
+		}
+	}
+
+	// board
+
+	for gridY := 0; gridY < len(c.Board); gridY++ {
+		for gridX, cell := range c.Board[gridY] {
+
+			// draw cell with border
+			var cellColor color.Color = options.cellBackgroundColor
+			if cell.Bonus != NoBonusType {
+				switch cell.Bonus {
+				case DoubleLetterScoreType:
+					cellColor = color.RGBA{R: 183, G: 215, B: 230, A: 255}
+				case DoubleWordScoreType:
+					cellColor = color.RGBA{R: 216, G: 143, B: 139, A: 255}
+				case TripleLetterScoreType:
+					cellColor = color.RGBA{R: 84, G: 164, B: 198, A: 255}
+				case TripleWordScoreType:
+					cellColor = color.RGBA{R: 208, G: 44, B: 32, A: 255}
+				}
+			}
+			dc.SetColor(cellColor)
+			dc.DrawRectangle(cellOffset+(float64(gridX)*cellWidth), cellOffset+(float64(gridY)*cellHeight), cellWidth, cellHeight)
+			dc.FillPreserve()
+
+			dc.SetColor(options.wordColor)
+			dc.SetLineWidth(0.3)
+			dc.Stroke()
+
+			pendingCell, pending := pendingWord[cell.Index]
+
+			if !cell.Empty() || (pending) {
+				dc.DrawRectangle(cellOffset+(float64(gridX)*cellWidth), cellOffset+(float64(gridY)*cellHeight), cellWidth, cellHeight)
+				dc.SetColor(options.wordBackgroundColor)
+				dc.FillPreserve()
+
+				cellContent := cell.String()
+				if pending {
+					cellContent = pendingCell.String()
+					dc.SetColor(colornames.Green)
+				} else {
+					dc.SetColor(options.wordColor)
+				}
+
+				// draw the word
+				dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 24}))
+				dc.DrawStringAnchored(
+					strings.ToUpper(cellContent),
+					cellOffset+float64(gridX)*cellWidth+cellWidth/2,
+					cellOffset+float64(gridY)*cellHeight+cellHeight/2,
+					0.5,
+					0.5,
+				)
+
+				cellScore := cell.LetterScoreString()
+				if pending {
+					cellScore = pendingCell.LetterScoreString()
+				}
+
+				// draw letter score
+				dc.SetColor(options.wordColor)
+				dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 12}))
+				dc.DrawStringAnchored(
+					cellScore,
+					cellOffset+float64(gridX)*cellWidth+cellWidth-12,
+					cellOffset+float64(gridY)*cellHeight+cellHeight-12,
+					0.5,
+					0.5,
+				)
+
+				dc.Stroke()
+			}
+
+			// draw cell index
+			dc.SetColor(color.RGBA{107, 107, 99, 255})
+			dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 12}))
+			dc.DrawStringAnchored(
+				cell.IndexString(),
+				cellOffset+float64(gridX)*cellWidth+12,
+				cellOffset+float64(gridY)*cellHeight+12,
+				0.5,
+				0.5,
+			)
+
+		}
+	}
+
+	suffix := "[IDLE]"
+	if c.GameState == StateStealing && c.PlaceWordAt != nil {
+		suffix = fmt.Sprintf("[STEALING %s]", time.Until(*c.PlaceWordAt).Truncate(time.Second))
+	}
+
+	xOffset := float64(gridWidth) + float64(options.borderWidth)
+
+	dc.SetColor(color.Black)
+	dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 20}))
+	dc.DrawString(
+		fmt.Sprintf("LETTERS (%d spare) | %s", len(c.SpareLetters), suffix),
+		xOffset,
+		50,
+	)
+	dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 18}))
+	dc.SetColor(colornames.Black)
+	for i, v := range c.Letters {
+		dc.SetColor(options.wordBackgroundColor)
+		dc.DrawRectangle(xOffset+float64(60*i), 50+float64(options.borderWidth)/2, 55, 55)
+		dc.Fill()
+
+		dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 18}))
+		dc.SetColor(colornames.Black)
+		dc.DrawStringAnchored(
+			string(v),
+			xOffset+float64(60*i)+30,
+			50+float64(options.borderWidth)/2+30,
+			0.5,
+			0.5,
+		)
+
+		dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 10}))
+		dc.SetColor(colornames.Black)
+		dc.DrawStringAnchored(
+			fmt.Sprintf("%d", LetterScores[v]),
+			xOffset+float64(60*i)+45,
+			50+float64(options.borderWidth)/2+45,
+			0.5,
+			0.5,
+		)
+	}
+
+	//scores
+	dc.SetColor(color.Black)
+	dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 20}))
+	dc.DrawString(
+		"PLAYER SCORES",
+		float64(gridWidth)+float64(options.borderWidth),
+		150+float64(options.borderWidth)/2,
+	)
+
+	dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 18}))
+	dc.SetColor(colornames.Black)
+	for i, score := range c.GetScores() {
+		if !c.IsPlayerAllowed(score.PlayerName) {
+			dc.SetColor(colornames.Red)
+		}
+		dc.DrawString(
+			fmt.Sprintf("%s: %d (%d words)", score.PlayerName, score.Score, score.Words),
+			float64(gridWidth)+float64(options.borderWidth),
+			150+float64(options.borderWidth)/2+(30*float64(i+1)),
+		)
+	}
+
+	// tile legend
+	dc.SetColor(color.Black)
+	dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 20}))
+	dc.DrawString(
+		"LEGEND",
+		float64(gridWidth)+float64(options.borderWidth),
+		(float64(gridHeight)-80)+float64(options.borderWidth)/2,
+	)
+	dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 18}))
+	for i, legend := range []struct {
+		name   string
+		colour color.Color
+	}{
+		{name: "Triple Word Score", colour: color.RGBA{R: 208, G: 44, B: 32, A: 255}},
+		{name: "Double Word Score", colour: color.RGBA{R: 216, G: 143, B: 139, A: 255}},
+		{name: "Triple Letter Score", colour: color.RGBA{R: 84, G: 164, B: 198, A: 255}},
+		{name: "Double Letter Score", colour: color.RGBA{R: 183, G: 215, B: 230, A: 255}},
+	} {
+		dc.SetColor(legend.colour)
+		dc.DrawString(
+			legend.name,
+			float64(gridWidth)+float64(options.borderWidth),
+			(float64(gridHeight)-20*float64(i))+float64(options.borderWidth)/2,
 		)
 	}
 

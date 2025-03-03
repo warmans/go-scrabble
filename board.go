@@ -3,13 +3,9 @@ package scrabble
 import (
 	"fmt"
 	"math"
-	"math/rand/v2"
-	"slices"
 	"strconv"
 	"strings"
 )
-
-const NumPlayerLetters = 7
 
 type CellState string
 
@@ -19,44 +15,6 @@ const (
 	CellAny   CellState = ""
 )
 
-type PlacementResult struct {
-	cells []Cell
-}
-
-func (r *PlacementResult) Score() int {
-	wordTotal := 0
-	var wordBonuses []CellBonusType
-	for _, c := range r.cells {
-		letterScore := LetterScores[c.Char]
-		switch c.Bonus {
-		case NoBonusType:
-			wordTotal += letterScore
-		case DoubleLetterScoreType:
-			wordTotal += letterScore * 2
-		case TripleLetterScoreType:
-			wordTotal += letterScore * 3
-		case DoubleWordScoreType:
-			wordTotal += letterScore
-			wordBonuses = append(wordBonuses, c.Bonus)
-		case TripleWordScoreType:
-			wordTotal += letterScore
-			wordBonuses = append(wordBonuses, c.Bonus)
-		}
-	}
-	for _, b := range wordBonuses {
-		switch b {
-		case DoubleWordScoreType:
-			wordTotal = wordTotal * 2
-		case TripleWordScoreType:
-			wordTotal = wordTotal * 3
-		}
-	}
-	if len(r.cells) == NumPlayerLetters {
-		wordTotal += 50
-	}
-	return wordTotal
-}
-
 type CellBonusType string
 
 const (
@@ -65,6 +23,13 @@ const (
 	DoubleWordScoreType   CellBonusType = "double_word_score"
 	TripleLetterScoreType CellBonusType = "triple_letter_score"
 	TripleWordScoreType   CellBonusType = "triple_word_score"
+)
+
+type Direction string
+
+const (
+	Down   Direction = "D"
+	Across Direction = "A"
 )
 
 type Cell struct {
@@ -119,11 +84,11 @@ func (b Board) getCellIndex(placement Placement, letterIdx int) (int64, error) {
 	return cellIndex, nil
 }
 
-func (b Board) isValidWordPlacement(placement Placement, word string, firstWord bool) ([]rune, error) {
+func (b Board) isValidWordPlacement(placement Placement, word string, firstWord bool) (*PlacementResult, error) {
 
-	lettersSpent := []rune{}
 	overlaps := 0
 	cellsCovered := []int64{}
+	result := &PlacementResult{Cells: make([]Cell, 0), LettersSpent: make([]rune, 0)}
 
 	for i, letter := range word {
 		isOverlapping := false
@@ -149,8 +114,14 @@ func (b Board) isValidWordPlacement(placement Placement, word string, firstWord 
 			isOverlapping = true
 		} else {
 			// user must have letter
-			lettersSpent = append(lettersSpent, letter)
+			result.LettersSpent = append(result.LettersSpent, letter)
 		}
+
+		// add to result
+		result.Cells = append(
+			result.Cells,
+			Cell{Index: cell.Index, Char: letter, Bonus: cell.Bonus},
+		)
 
 		neighbours := b.nonEmptyNeighbouringCells(cellIndex)
 
@@ -199,19 +170,24 @@ func (b Board) isValidWordPlacement(placement Placement, word string, firstWord 
 		}
 	}
 
-	return lettersSpent, nil
+	return result, nil
 }
 
 func (b Board) placeWord(placement Placement, word string) (*PlacementResult, error) {
-	result := &PlacementResult{cells: make([]Cell, 0)}
+	result := &PlacementResult{Cells: make([]Cell, 0)}
 	for i, letter := range word {
 		cellIndex, err := b.getCellIndex(placement, i)
 		if err != nil {
 			return nil, err
 		}
 
-		cell, _ := b.SetCell(cellIndex, letter)
-		result.cells = append(result.cells, cell)
+		cell, placed := b.SetCell(cellIndex, letter)
+		result.Cells = append(result.Cells, cell)
+
+		if placed {
+			result.LettersSpent = append(result.LettersSpent, letter)
+		}
+
 	}
 	return result, nil
 }
@@ -291,62 +267,13 @@ func NewBoard(size int) Board {
 	return grid
 }
 
-type Player struct {
-	Name    string
-	Letters []rune
-	Score   int
+type Placement struct {
+	CellId    int64
+	Direction Direction
 }
 
-func (p *Player) getUsedLetters(letters []rune) (map[rune]int, bool) {
-	lettermap := map[rune]int{}
-
-	foundAll := true
-	for _, l := range p.Letters {
-		if _, ok := lettermap[l]; ok {
-			lettermap[l]++
-		} else {
-			lettermap[l] = 1
-		}
-	}
-	for _, want := range letters {
-		found := false
-		if avail, ok := lettermap[want]; ok && avail > 0 {
-			found = true
-			lettermap[want]--
-		}
-		if !found {
-			// if they have a blank they can use that instead for any letter
-			if avail, ok := lettermap['_']; ok && avail > 0 {
-				found = true
-				lettermap['_']--
-			}
-		}
-		if !found {
-			foundAll = false
-		}
-	}
-
-	return lettermap, foundAll
-}
-
-func (p *Player) hasLetters(letters []rune) bool {
-	_, foundAll := p.getUsedLetters(letters)
-	return foundAll
-}
-
-func (p *Player) removeLetters(letters []rune) error {
-	newLetters := make([]rune, 0, 7)
-	usageMap, foundAll := p.getUsedLetters(letters)
-	if !foundAll {
-		return fmt.Errorf("all letters were not found to be removed")
-	}
-	for letter, avail := range usageMap {
-		for range avail {
-			newLetters = append(newLetters, letter)
-		}
-	}
-	p.Letters = newLetters
-	return nil
+func (p Placement) String() string {
+	return fmt.Sprintf("%s%d", p.Direction, p.CellId)
 }
 
 func MustParsePlacement(placementStr string) Placement {
@@ -376,171 +303,41 @@ func ParsePlacement(placementStr string) (Placement, error) {
 	return p, nil
 }
 
-type Direction string
-
-const (
-	Down   Direction = "D"
-	Across Direction = "A"
-)
-
-type Placement struct {
-	CellId    int64
-	Direction Direction
+type PlacementResult struct {
+	Cells        []Cell
+	LettersSpent []rune
 }
 
-func (p Placement) String() string {
-	return fmt.Sprintf("%s%d", p.Direction, p.CellId)
-}
-
-func NewGame() *Game {
-	game := &Game{
-		Board:         NewBoard(15),
-		CurrentPlayer: 0,
-		SpareLetters:  makeLetterBag(),
-		Players:       make([]*Player, 0),
-	}
-
-	return game
-}
-
-type Game struct {
-	Board          Board
-	Players        []*Player
-	CurrentPlayer  int
-	SpareLetters   []rune
-	NumWordsPlaced int
-	Complete       bool
-}
-
-func (g *Game) AddPlayer(name string) error {
-	g.Players = append(g.Players, &Player{Name: name, Letters: make([]rune, 0)})
-	if err := g.refillPlayerLetters(len(g.Players) - 1); err != nil {
-		return err
-	}
-	return nil
-}
-
-// PlaceWord places a word on the game, the word must be a whole word even if it is just adding letters
-// to an existing word. Any exising letters are not spent by the player.
-func (g *Game) PlaceWord(place Placement, word string) error {
-	word = strings.ToUpper(word)
-
-	player, err := g.GetCurrentPlayer()
-	if err != nil {
-		return err
-	}
-
-	// is the word valid
-	lettersRequired, err := g.Board.isValidWordPlacement(place, word, g.NumWordsPlaced == 0)
-	if err != nil {
-		return err
-	}
-
-	// do they have the letters required to make the word considering overlaps
-	if !player.hasLetters(lettersRequired) {
-		return fmt.Errorf("player does not have all letters of word: %s", word)
-	}
-
-	// spend the letters
-	if err := player.removeLetters(lettersRequired); err != nil {
-		return err
-	}
-
-	// update the board
-	result, err := g.Board.placeWord(place, word)
-	if err != nil {
-		// we're in trouble here because the letters have already been removed from the player
-		return err
-	}
-
-	if err := g.refillPlayerLetters(g.CurrentPlayer); err != nil {
-		return err
-	}
-
-	// scoring
-	player.Score += result.Score()
-
-	g.NextPlayer()
-
-	g.NumWordsPlaced++
-	return nil
-}
-
-func (g *Game) getPlayer(idx int) (*Player, error) {
-	for k, v := range g.Players {
-		if k == idx {
-			return v, nil
+func (r *PlacementResult) Score() int {
+	wordTotal := 0
+	var wordBonuses []CellBonusType
+	for _, c := range r.Cells {
+		letterScore := LetterScores[c.Char]
+		switch c.Bonus {
+		case NoBonusType:
+			wordTotal += letterScore
+		case DoubleLetterScoreType:
+			wordTotal += letterScore * 2
+		case TripleLetterScoreType:
+			wordTotal += letterScore * 3
+		case DoubleWordScoreType:
+			wordTotal += letterScore
+			wordBonuses = append(wordBonuses, c.Bonus)
+		case TripleWordScoreType:
+			wordTotal += letterScore
+			wordBonuses = append(wordBonuses, c.Bonus)
 		}
 	}
-	return nil, fmt.Errorf("unknown player index: %d", idx)
-}
-
-func (g *Game) GetCurrentPlayer() (*Player, error) {
-	for k, v := range g.Players {
-		if k == g.CurrentPlayer {
-			return v, nil
+	for _, b := range wordBonuses {
+		switch b {
+		case DoubleWordScoreType:
+			wordTotal = wordTotal * 2
+		case TripleWordScoreType:
+			wordTotal = wordTotal * 3
 		}
 	}
-	return nil, fmt.Errorf("unknown current player index: %d", g.CurrentPlayer)
-}
-
-func (g *Game) getCurrentPlayerName() string {
-	player, err := g.GetCurrentPlayer()
-	if err != nil {
-		return "Unknown"
+	if len(r.Cells) == NumPlayerLetters {
+		wordTotal += 50
 	}
-	return player.Name
-}
-
-func (g *Game) getNextPlayerIdx() int {
-	if g.CurrentPlayer+1 > len(g.Players)-1 {
-		return 0 // wrap around
-	}
-	return g.CurrentPlayer + 1
-}
-
-func (g *Game) NextPlayer() {
-	maxAttempts := len(g.Players)
-	for maxAttempts > 0 {
-		next := g.getNextPlayerIdx()
-		if len(g.Players[next].Letters) > 0 {
-			g.CurrentPlayer = next
-			break
-		}
-		maxAttempts--
-	}
-	if maxAttempts == 0 {
-		g.Complete = true
-	}
-}
-
-func (g *Game) refillPlayerLetters(idx int) error {
-	player, err := g.getPlayer(idx)
-	if err != nil {
-		return err
-	}
-	for {
-		if len(player.Letters)+1 > NumPlayerLetters || len(g.SpareLetters) == 0 {
-			return nil
-		}
-		letterIdx := rand.IntN(len(g.SpareLetters) - 1)
-		player.Letters = append(player.Letters, g.SpareLetters[letterIdx])
-		g.SpareLetters = slices.Delete(g.SpareLetters, letterIdx, letterIdx+1)
-	}
-}
-
-func dumpLetters(letters []rune) string {
-	out := ""
-	for _, v := range letters {
-		out = out + string(v)
-	}
-	return out
-}
-
-func dumpLetterMap(letters map[rune]int) string {
-	out := ""
-	for letter, avail := range letters {
-		out = out + fmt.Sprintf("%s:%d", string(letter), avail)
-	}
-	return out
+	return wordTotal
 }

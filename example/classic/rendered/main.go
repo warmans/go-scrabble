@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	game := scrabble.NewGame()
+	game := scrabble.NewClassicGame()
 	if err := game.AddPlayer("player 1"); err != nil {
 		panic(err)
 	}
@@ -36,7 +36,7 @@ func main() {
 
 	scrabble.PrintGame(game, os.Stdout)
 
-	canvas, err := scrabble.RenderPNG(game, 1500, 1000)
+	canvas, err := scrabble.RenderClassicPNG(game, 1500, 1000)
 	if err != nil {
 		panic(err)
 	}
