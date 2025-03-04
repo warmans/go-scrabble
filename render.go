@@ -411,6 +411,7 @@ func RenderScrabulousPNG(c *Scrabulous, width, height int, opts ...RenderOption)
 		} else {
 			dc.SetColor(colornames.Black)
 		}
+		c.PendingWords
 		dc.DrawString(
 			fmt.Sprintf("%s: %d (%d words)", score.PlayerName, score.Score, score.Words),
 			float64(gridWidth)+float64(options.borderWidth),

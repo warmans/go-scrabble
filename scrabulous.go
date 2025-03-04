@@ -20,6 +20,7 @@ type Word struct {
 	Word      []rune
 	Place     Placement
 	Result    *PlacementResult
+	Stolen    bool
 }
 
 func (w Word) String() string {
@@ -83,23 +84,25 @@ func (s *Scrabulous) TryPlacePendingWord() error {
 	return nil
 }
 
-func (s *Scrabulous) CreatePendingWord(place Placement, word string, playerName string) error {
+func (s *Scrabulous) CreatePendingWord(place Placement, word string, playerName string) (bool, error) {
 	word = strings.ToUpper(word)
 
 	// is the word valid
 	result, err := s.Board.isValidWordPlacement(place, word, len(s.PlacedWords) == 0)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// do they have the letters required to make the word considering overlaps
 	if !s.haveLetters(result.LettersSpent) {
-		return fmt.Errorf("you do not have all letters of word: %s", word)
+		return false, fmt.Errorf("you do not have all letters of word: %s", word)
 	}
 
 	// if this is the beginning of a new
+	firstPendingWord := false
 	if len(s.PendingWords) == 0 {
 		s.startStealTime()
+		firstPendingWord = true
 	}
 
 	// if it's a new best word add it to the end fo the list
@@ -111,11 +114,13 @@ func (s *Scrabulous) CreatePendingWord(place Placement, word string, playerName 
 				Submitter: playerName,
 				Place:     place,
 				Result:    result,
+				Stolen:    !firstPendingWord,
 			},
 		)
+		return true, nil
 	}
 
-	return nil
+	return false, nil
 }
 
 func (s *Scrabulous) PlacePendingWord() error {
@@ -211,6 +216,13 @@ func (s *Scrabulous) ResetLetters() {
 		s.Letters = append(s.Letters, s.SpareLetters[letterIdx])
 		s.SpareLetters = slices.Delete(s.SpareLetters, letterIdx, letterIdx+1)
 	}
+}
+
+func (s *Scrabulous) GetLastPendingWord() *Word {
+	if len(s.PendingWords) == 0 {
+		return nil
+	}
+	return s.PendingWords[len(s.PendingWords)-1]
 }
 
 func (s *Scrabulous) removeLetters(letters []rune) error {
