@@ -354,7 +354,7 @@ func RenderScrabulousPNG(c *Scrabulous, width, height int, opts ...RenderOption)
 
 	suffix := "[IDLE]"
 	if c.GameState == StateStealing && c.PlaceWordAt != nil {
-		suffix = fmt.Sprintf("[STEALING %s]", time.Until(*c.PlaceWordAt).Truncate(time.Second))
+		suffix = fmt.Sprintf("[COUNTDOWN %s]", time.Until(*c.PlaceWordAt).Truncate(time.Second))
 	}
 
 	xOffset := float64(gridWidth) + float64(options.borderWidth)
