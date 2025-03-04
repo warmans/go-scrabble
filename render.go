@@ -408,6 +408,8 @@ func RenderScrabulousPNG(c *Scrabulous, width, height int, opts ...RenderOption)
 	for i, score := range c.GetScores() {
 		if !c.IsPlayerAllowed(score.PlayerName) {
 			dc.SetColor(colornames.Red)
+		} else {
+			dc.SetColor(colornames.Black)
 		}
 		dc.DrawString(
 			fmt.Sprintf("%s: %d (%d words)", score.PlayerName, score.Score, score.Words),

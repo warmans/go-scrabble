@@ -170,7 +170,7 @@ func (s *Scrabulous) GetScores() []*Score {
 	}
 
 	slices.SortFunc(scores, func(a, b *Score) int {
-		return a.Score - b.Score
+		return b.Score - a.Score
 	})
 
 	return scores
