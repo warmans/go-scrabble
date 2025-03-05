@@ -17,3 +17,11 @@ func dumpLetterMap(letters map[rune]int) string {
 	}
 	return out
 }
+
+func dumpCells(cells []Cell) string {
+	out := ""
+	for _, cell := range cells {
+		out = out + fmt.Sprintf("%s|", string(cell.String()))
+	}
+	return out
+}

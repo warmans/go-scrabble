@@ -160,7 +160,7 @@ func RenderClassicPNG(c *Classic, width, height int, opts ...RenderOption) (*gg.
 
 			// draw cell index
 			dc.SetColor(color.RGBA{107, 107, 99, 255})
-			dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 12}))
+			dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 14}))
 			dc.DrawStringAnchored(
 				cell.IndexString(),
 				cellOffset+float64(gridX)*cellWidth+12,
@@ -273,19 +273,9 @@ func RenderScrabulousPNG(c *Scrabulous, width, height int, opts ...RenderOption)
 		for gridX, cell := range c.Board[gridY] {
 
 			// draw cell with border
-			var cellColor color.Color = options.cellBackgroundColor
-			if cell.Bonus != NoBonusType {
-				switch cell.Bonus {
-				case DoubleLetterScoreType:
-					cellColor = color.RGBA{R: 183, G: 215, B: 230, A: 255}
-				case DoubleWordScoreType:
-					cellColor = color.RGBA{R: 216, G: 143, B: 139, A: 255}
-				case TripleLetterScoreType:
-					cellColor = color.RGBA{R: 84, G: 164, B: 198, A: 255}
-				case TripleWordScoreType:
-					cellColor = color.RGBA{R: 208, G: 44, B: 32, A: 255}
-				}
-			}
+			cellColor := getBonusColour(options.cellBackgroundColor, cell.Bonus)
+			specialColor := getBonusColour(options.wordColor, cell.Bonus)
+
 			dc.SetColor(cellColor)
 			dc.DrawRectangle(cellOffset+(float64(gridX)*cellWidth), cellOffset+(float64(gridY)*cellHeight), cellWidth, cellHeight)
 			dc.FillPreserve()
@@ -310,7 +300,7 @@ func RenderScrabulousPNG(c *Scrabulous, width, height int, opts ...RenderOption)
 				}
 
 				// draw the word
-				dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 24}))
+				dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 26}))
 				dc.DrawStringAnchored(
 					strings.ToUpper(cellContent),
 					cellOffset+float64(gridX)*cellWidth+cellWidth/2,
@@ -325,8 +315,8 @@ func RenderScrabulousPNG(c *Scrabulous, width, height int, opts ...RenderOption)
 				}
 
 				// draw letter score
-				dc.SetColor(options.wordColor)
-				dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 12}))
+				dc.SetColor(specialColor)
+				dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 14}))
 				dc.DrawStringAnchored(
 					cellScore,
 					cellOffset+float64(gridX)*cellWidth+cellWidth-12,
@@ -340,7 +330,7 @@ func RenderScrabulousPNG(c *Scrabulous, width, height int, opts ...RenderOption)
 
 			// draw cell index
 			dc.SetColor(color.RGBA{107, 107, 99, 255})
-			dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 12}))
+			dc.SetFontFace(truetype.NewFace(font, &truetype.Options{Size: 14}))
 			dc.DrawStringAnchored(
 				cell.IndexString(),
 				cellOffset+float64(gridX)*cellWidth+12,
@@ -445,4 +435,21 @@ func RenderScrabulousPNG(c *Scrabulous, width, height int, opts ...RenderOption)
 	}
 
 	return dc, nil
+}
+
+func getBonusColour(def color.Color, bonus CellBonusType) color.Color {
+	var cellColor = def
+	if bonus != NoBonusType {
+		switch bonus {
+		case DoubleLetterScoreType:
+			cellColor = color.RGBA{R: 183, G: 215, B: 230, A: 255}
+		case DoubleWordScoreType:
+			cellColor = color.RGBA{R: 216, G: 143, B: 139, A: 255}
+		case TripleLetterScoreType:
+			cellColor = color.RGBA{R: 84, G: 164, B: 198, A: 255}
+		case TripleWordScoreType:
+			cellColor = color.RGBA{R: 208, G: 44, B: 32, A: 255}
+		}
+	}
+	return cellColor
 }

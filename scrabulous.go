@@ -21,6 +21,7 @@ type Word struct {
 	Place     Placement
 	Result    *PlacementResult
 	Stolen    bool
+	joined    []string
 }
 
 func (w Word) String() string {
@@ -35,11 +36,9 @@ type Score struct {
 
 func NewScrabulousGame(stealTime time.Duration) *Scrabulous {
 	game := &Scrabulous{
-		Board:        NewBoard(15),
-		SpareLetters: makeLetterBag(),
-		PlacedWords:  make([]*Word, 0),
-		StealTime:    stealTime,
+		StealTime: stealTime,
 	}
+	game.ResetGame()
 
 	return game
 }
@@ -84,18 +83,18 @@ func (s *Scrabulous) TryPlacePendingWord() error {
 	return nil
 }
 
-func (s *Scrabulous) CreatePendingWord(place Placement, word string, playerName string) (bool, error) {
+func (s *Scrabulous) CreatePendingWord(place Placement, word string, playerName string) (*PlacementResult, error) {
 	word = strings.ToUpper(word)
 
 	// is the word valid
 	result, err := s.Board.isValidWordPlacement(place, word, len(s.PlacedWords) == 0)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	// do they have the letters required to make the word considering overlaps
 	if !s.haveLetters(result.LettersSpent) {
-		return false, fmt.Errorf("you do not have all letters of word: %s", word)
+		return nil, fmt.Errorf("you do not have all letters of word: %s", word)
 	}
 
 	// if this is the beginning of a new
@@ -117,10 +116,10 @@ func (s *Scrabulous) CreatePendingWord(place Placement, word string, playerName 
 				Stolen:    !firstPendingWord,
 			},
 		)
-		return true, nil
+		return result, nil
 	}
 
-	return false, nil
+	return nil, nil
 }
 
 func (s *Scrabulous) PlacePendingWord() error {
@@ -232,6 +231,16 @@ func (s *Scrabulous) GetLastPendingWord() *Word {
 		return nil
 	}
 	return s.PendingWords[len(s.PendingWords)-1]
+}
+
+func (s *Scrabulous) ResetGame() {
+	s.Board = NewBoard(15)
+	s.SpareLetters = makeLetterBag()
+	s.PlacedWords = make([]*Word, 0)
+	s.PendingWords = make([]*Word, 0)
+	s.PlaceWordAt = nil
+	s.GameState = StateIdle
+	s.Complete = false
 }
 
 func (s *Scrabulous) removeLetters(letters []rune) error {

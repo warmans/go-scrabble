@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/warmans/go-scrabble"
 	"time"
 )
@@ -10,23 +9,51 @@ func main() {
 	game := scrabble.NewScrabulousGame(time.Minute * 5)
 
 	game.Letters = []rune{'F', 'O', 'O', 'F'}
-	if err := game.CreatePendingWord(scrabble.MustParsePlacement("A113"), "foof", "player 1"); err != nil {
+	if _, err := game.CreatePendingWord(scrabble.MustParsePlacement("A113"), "foof", "player 1"); err != nil {
 		panic(err)
 	}
 
-	fmt.Println("Pending...")
-	for _, v := range game.PendingWords {
-		fmt.Println(v)
-	}
+	//fmt.Println("Pending...")
+	//for _, v := range game.PendingWords {
+	//	fmt.Println(v)
+	//}
 
 	if err := game.PlacePendingWord(); err != nil {
 		panic(err)
 	}
 
 	game.Letters = []rune{'F', 'O', 'O', 'F', 'S'}
-	if err := game.CreatePendingWord(scrabble.MustParsePlacement("D116"), "foofs", "player 2"); err != nil {
+	if _, err := game.CreatePendingWord(scrabble.MustParsePlacement("D57"), "foofs", "player 2"); err != nil {
 		panic(err)
 	}
+	//for _, v := range game.PendingWords {
+	//	fmt.Println(v)
+	//}
+
+	if err := game.PlacePendingWord(); err != nil {
+		panic(err)
+	}
+
+	game.Letters = []rune{'F', 'O', 'O', 'F', 'S'}
+	if _, err := game.CreatePendingWord(scrabble.MustParsePlacement("A57"), "FOO", "player 3"); err != nil {
+		panic(err)
+	}
+	if err := game.PlacePendingWord(); err != nil {
+		panic(err)
+	}
+
+	game.Letters = []rune{'F', 'O', 'O', 'F', 'S'}
+	if _, err := game.CreatePendingWord(scrabble.MustParsePlacement("D15"), "SOOFF", "player 4"); err != nil {
+		panic(err)
+	}
+	if err := game.PlacePendingWord(); err != nil {
+		panic(err)
+	}
+
+	//game.Letters = []rune{'A', 'A'}
+	//if _, err := game.CreatePendingWord(scrabble.MustParsePlacement("D86"), "AAF", "player 4"); err != nil {
+	//	panic(err)
+	//}
 	//if err := game.PlacePendingWord(); err != nil {
 	//	panic(err)
 	//}

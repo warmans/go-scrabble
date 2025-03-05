@@ -3,6 +3,7 @@ package scrabble
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -25,11 +26,20 @@ const (
 	TripleWordScoreType   CellBonusType = "triple_word_score"
 )
 
+type Orientation string
+
+const (
+	Down   Orientation = "D"
+	Across Orientation = "A"
+)
+
 type Direction string
 
 const (
-	Down   Direction = "D"
-	Across Direction = "A"
+	U Direction = "up"
+	D Direction = "down"
+	L Direction = "left"
+	R Direction = "right"
 )
 
 type Cell struct {
@@ -55,7 +65,7 @@ func (c Cell) LetterScoreString() string {
 }
 
 type Overlap struct {
-	L bool // top
+	L bool // left
 	R bool // right
 	A bool // above
 	B bool // below
@@ -63,39 +73,49 @@ type Overlap struct {
 
 type Board [][]Cell
 
-func (b Board) getCellIndex(placement Placement, letterIdx int) (int64, error) {
-	var cellIndex int64
+func (b Board) getCellIndex(placement Placement, offset int) int64 {
 	if placement.Direction == Down {
-		// the board is a square so the next down square we should be able to just add the length of a row.
-		// no need to check if the word spans multiple columns because the IDs go from L2R.
-		// if the letterIdx is negative then move backwards.
-		verticalOffset := int64(len(b) * letterIdx)
-		if letterIdx < 0 {
-			verticalOffset = 0 - verticalOffset
-		}
-		cellIndex = placement.CellId + verticalOffset
-	} else {
-		cellIndex = placement.CellId + int64(letterIdx)
-		// check that all letters are on the same row as the first one
-		if math.Ceil(float64(cellIndex)/float64(len(b))) != math.Ceil(float64(placement.CellId)/float64(len(b))) {
-			return 0, fmt.Errorf("word cannot span multiple rows")
-		}
+		return b.getNextVerticalCellId(placement.CellId, offset)
 	}
-	return cellIndex, nil
+	return b.getNextHorizontalCellId(placement.CellId, offset)
+}
+
+func (b Board) getNextVerticalCellId(cellID int64, offset int) int64 {
+	// the board is a square so the next down square we should be able to just add the length of a row.
+	// no need to check if the word spans multiple columns because the IDs go from L2R.
+	// if the offset is negative then move backwards.
+	verticalOffset := int64(len(b) * offset)
+	if offset < 0 {
+		verticalOffset = 0 - verticalOffset
+	}
+	return cellID + verticalOffset
+}
+
+func (b Board) getNextHorizontalCellId(cellID int64, offset int) int64 {
+	cellIndex := cellID + int64(offset)
+	// check that all letters are on the same row as the first one
+	if math.Ceil(float64(cellIndex)/float64(len(b))) != math.Ceil(float64(cellID)/float64(len(b))) {
+		return -1
+	}
+	return cellIndex
 }
 
 func (b Board) isValidWordPlacement(placement Placement, word string, firstWord bool) (*PlacementResult, error) {
 
 	overlaps := 0
 	cellsCovered := []int64{}
-	result := &PlacementResult{Cells: make([]Cell, 0), LettersSpent: make([]rune, 0)}
+	result := &PlacementResult{
+		Cells:        make([]Cell, 0),
+		LettersSpent: make([]rune, 0),
+		Touching:     make([][]Cell, 0),
+	}
 
-	for i, letter := range word {
+	for i, letter := range []rune(word) {
 		isOverlapping := false
 
-		cellIndex, err := b.getCellIndex(placement, i)
-		if err != nil {
-			return nil, err
+		cellIndex := b.getCellIndex(placement, i)
+		if cellIndex == -1 {
+			return nil, fmt.Errorf("word had invalid cell range")
 		}
 		cellsCovered = append(cellsCovered, cellIndex)
 		// 1. does the word fit within the board
@@ -117,35 +137,74 @@ func (b Board) isValidWordPlacement(placement Placement, word string, firstWord 
 			result.LettersSpent = append(result.LettersSpent, letter)
 		}
 
+		thisCell := Cell{Index: cell.Index, Char: letter, Bonus: cell.Bonus}
+
 		// add to result
 		result.Cells = append(
 			result.Cells,
-			Cell{Index: cell.Index, Char: letter, Bonus: cell.Bonus},
+			thisCell,
 		)
 
 		neighbours := b.nonEmptyNeighbouringCells(cellIndex)
 
-		// 3. Does the word fit into the given placement considering neighbouring cells
-		if placement.Direction == Across {
-			if i == 0 && neighbours.L {
-				return nil, fmt.Errorf("first letter is too close to another word")
+		// if this is the last letter of a DOWN word, there cannot be any letters directly below
+		if placement.Direction == Down && i == len(word)-1 && neighbours.B {
+			return nil, fmt.Errorf("word below %s is too close", string(letter))
+		}
+		if placement.Direction == Down && i == 0 && neighbours.A {
+			return nil, fmt.Errorf("word above %s is too close", string(letter))
+		}
+		if placement.Direction == Across && i == len(word)-1 && neighbours.R {
+			return nil, fmt.Errorf("word to the right of %s is too close", string(letter))
+		}
+		if placement.Direction == Across && i == 0 && neighbours.L {
+			return nil, fmt.Errorf("word to the left of %s is too close", string(word))
+		}
+
+		// words can only join for non-overlapping letters
+		if !isOverlapping {
+
+			// get joined horizontal words
+			if placement.Direction != Across {
+				touchingX := make([]Cell, 0)
+				if neighbours.L {
+					lhs := b.NeighboringWord(int64(cell.Index), L)
+					slices.Reverse(lhs)
+					touchingX = append(touchingX, lhs...)
+				}
+				if neighbours.L || neighbours.R {
+					if i > 0 && placement.Direction == Across {
+						touchingX = append(touchingX, result.Cells...)
+					} else {
+						touchingX = append(touchingX, thisCell)
+					}
+				}
+				if neighbours.R {
+					touchingX = append(touchingX, b.NeighboringWord(int64(cell.Index), R)...)
+				}
+				if len(touchingX) > 0 {
+					result.Touching = append(result.Touching, touchingX)
+				}
 			}
-			if i == len(word)-1 && neighbours.R {
-				return nil, fmt.Errorf("last letter is too close to another word")
-			}
-			// if the letter is overlapping there will be other letters touching the sides
-			if !isOverlapping && (neighbours.A || neighbours.B) {
-				return nil, fmt.Errorf("another word is too close above or below")
-			}
-		} else {
-			if i == 0 && neighbours.A {
-				return nil, fmt.Errorf("first letter is too close to another word")
-			}
-			if i == len(word)-1 && neighbours.B {
-				return nil, fmt.Errorf("last letter is too close to another word")
-			}
-			if !isOverlapping && (neighbours.R || neighbours.L) {
-				return nil, fmt.Errorf("another word is too close to the left or right")
+
+			// get joined vertical words
+
+			if placement.Direction != Down {
+				touchingY := make([]Cell, 0)
+				if neighbours.A {
+					lhs := b.NeighboringWord(int64(cell.Index), U)
+					slices.Reverse(lhs)
+					touchingY = append(lhs, *cell)
+				}
+				if neighbours.A || neighbours.B {
+					touchingY = append(touchingY, thisCell)
+				}
+				if neighbours.B {
+					touchingY = append(touchingY, b.NeighboringWord(int64(cell.Index), D)...)
+				}
+				if len(touchingY) > 0 {
+					result.Touching = append(result.Touching, touchingY)
+				}
 			}
 		}
 	}
@@ -153,8 +212,8 @@ func (b Board) isValidWordPlacement(placement Placement, word string, firstWord 
 		return nil, fmt.Errorf("word completely overlaps another word")
 	}
 
-	if !firstWord && overlaps == 0 {
-		return nil, fmt.Errorf("word must overlap at least one other word")
+	if !firstWord && overlaps == 0 && len(result.Touching) == 0 {
+		return nil, fmt.Errorf("word must overlap or touch at least one other word")
 	}
 
 	if firstWord {
@@ -176,9 +235,9 @@ func (b Board) isValidWordPlacement(placement Placement, word string, firstWord 
 func (b Board) placeWord(placement Placement, word string) (*PlacementResult, error) {
 	result := &PlacementResult{Cells: make([]Cell, 0)}
 	for i, letter := range word {
-		cellIndex, err := b.getCellIndex(placement, i)
-		if err != nil {
-			return nil, err
+		cellIndex := b.getCellIndex(placement, i)
+		if cellIndex == -1 {
+			return nil, fmt.Errorf("word has invalid cell range")
 		}
 
 		cell, placed := b.SetCell(cellIndex, letter)
@@ -211,6 +270,32 @@ func (b Board) GetCell(cellID int64, state CellState) *Cell {
 		}
 	}
 	return nil
+}
+
+func (b Board) NeighboringWord(cellID int64, direction Direction) []Cell {
+	cells := make([]Cell, 0)
+	offset := 0
+	for {
+		if direction == L || direction == U {
+			offset -= 1
+		} else {
+			offset += 1
+		}
+		var nextCellId int64
+		if direction == U || direction == D {
+			nextCellId = b.getNextVerticalCellId(cellID, offset)
+		} else {
+			nextCellId = b.getNextHorizontalCellId(cellID, offset)
+		}
+		if nextCellId < 0 {
+			return cells
+		}
+		nextCell := b.GetCell(nextCellId, CellFull)
+		if nextCell == nil {
+			return cells
+		}
+		cells = append(cells, *nextCell)
+	}
 }
 
 func (b Board) SetCell(cellID int64, letter rune) (Cell, bool) {
@@ -269,7 +354,7 @@ func NewBoard(size int) Board {
 
 type Placement struct {
 	CellId    int64
-	Direction Direction
+	Direction Orientation
 }
 
 func (p Placement) String() string {
@@ -306,38 +391,50 @@ func ParsePlacement(placementStr string) (Placement, error) {
 type PlacementResult struct {
 	Cells        []Cell
 	LettersSpent []rune
+	Touching     [][]Cell
 }
 
 func (r *PlacementResult) Score() int {
-	wordTotal := 0
-	var wordBonuses []CellBonusType
-	for _, c := range r.Cells {
-		letterScore := LetterScores[c.Char]
-		switch c.Bonus {
-		case NoBonusType:
-			wordTotal += letterScore
-		case DoubleLetterScoreType:
-			wordTotal += letterScore * 2
-		case TripleLetterScoreType:
-			wordTotal += letterScore * 3
-		case DoubleWordScoreType:
-			wordTotal += letterScore
-			wordBonuses = append(wordBonuses, c.Bonus)
-		case TripleWordScoreType:
-			wordTotal += letterScore
-			wordBonuses = append(wordBonuses, c.Bonus)
-		}
+	total := 0
+	words := [][]Cell{r.Cells}
+	if len(r.Touching) > 0 {
+		words = append(words, r.Touching...)
 	}
-	for _, b := range wordBonuses {
-		switch b {
-		case DoubleWordScoreType:
-			wordTotal = wordTotal * 2
-		case TripleWordScoreType:
-			wordTotal = wordTotal * 3
+	for _, word := range words {
+		if len(word) == 1 {
+			continue
 		}
+		var wordTotal int
+		var wordBonuses []CellBonusType
+		for _, c := range word {
+			letterScore := LetterScores[c.Char]
+			switch c.Bonus {
+			case NoBonusType:
+				wordTotal += letterScore
+			case DoubleLetterScoreType:
+				wordTotal += letterScore * 2
+			case TripleLetterScoreType:
+				wordTotal += letterScore * 3
+			case DoubleWordScoreType:
+				wordTotal += letterScore
+				wordBonuses = append(wordBonuses, c.Bonus)
+			case TripleWordScoreType:
+				wordTotal += letterScore
+				wordBonuses = append(wordBonuses, c.Bonus)
+			}
+		}
+		for _, b := range wordBonuses {
+			switch b {
+			case DoubleWordScoreType:
+				wordTotal = wordTotal * 2
+			case TripleWordScoreType:
+				wordTotal = wordTotal * 3
+			}
+		}
+		total = total + wordTotal
 	}
 	if len(r.Cells) == NumPlayerLetters {
-		wordTotal += 50
+		total += 504
 	}
-	return wordTotal
+	return total
 }
