@@ -241,6 +241,7 @@ func (s *Scrabulous) ResetGame() {
 	s.PlaceWordAt = nil
 	s.GameState = StateIdle
 	s.Complete = false
+	s.ResetLetters()
 }
 
 func (s *Scrabulous) removeLetters(letters []rune) error {
