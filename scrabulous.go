@@ -147,6 +147,10 @@ func (s *Scrabulous) PlacePendingWord() error {
 
 	s.ResetLetters()
 
+	if len(s.Letters) == 0 && len(s.SpareLetters) == 0 {
+		s.Complete = true
+	}
+
 	s.setGameIdle()
 
 	return nil
@@ -212,7 +216,12 @@ func (s *Scrabulous) ResetLetters() {
 		if len(s.Letters)+1 > NumPlayerLetters || len(s.SpareLetters) == 0 {
 			return
 		}
-		letterIdx := rand.IntN(len(s.SpareLetters) - 1)
+		var letterIdx int
+		if len(s.SpareLetters)-1 == 0 {
+			letterIdx = 0
+		} else {
+			letterIdx = rand.IntN(len(s.SpareLetters) - 1)
+		}
 		s.Letters = append(s.Letters, s.SpareLetters[letterIdx])
 		s.SpareLetters = slices.Delete(s.SpareLetters, letterIdx, letterIdx+1)
 	}
