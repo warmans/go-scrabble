@@ -433,8 +433,8 @@ func (r *PlacementResult) Score() int {
 		}
 		total = total + wordTotal
 	}
-	if len(r.Cells) == NumPlayerLetters {
-		total += 504
+	if len(r.LettersSpent) == NumPlayerLetters {
+		total += 50
 	}
 	return total
 }
