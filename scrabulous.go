@@ -77,7 +77,7 @@ func (s *Scrabulous) BestPendingWord() *Word {
 }
 
 func (s *Scrabulous) TryPlacePendingWord() error {
-	if s.PlaceWordAt != nil && time.Now().After(*s.PlaceWordAt) {
+	if len(s.PendingWords) > 0 && s.PlaceWordAt != nil && time.Now().After(*s.PlaceWordAt) {
 		return s.PlacePendingWord()
 	}
 	return nil
