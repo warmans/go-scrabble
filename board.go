@@ -459,16 +459,18 @@ func (r *PlacementResult) score() (int, [][]string) {
 					explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("%s (%d)", string(c.Char), letterScore))
 				case DoubleLetterScoreType:
 					wordTotal += letterScore * 2
-					explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("%s (%d*2)", string(c.Char), letterScore))
+					explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("%s (%dx2)", string(c.Char), letterScore))
 				case TripleLetterScoreType:
 					wordTotal += letterScore * 3
-					explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("%s (%d*3)", string(c.Char), letterScore))
+					explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("%s (%dx3)", string(c.Char), letterScore))
 				case DoubleWordScoreType:
 					wordTotal += letterScore
 					wordBonuses = append(wordBonuses, c.Bonus)
+					explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("%s (%d)", string(c.Char), letterScore))
 				case TripleWordScoreType:
 					wordTotal += letterScore
 					wordBonuses = append(wordBonuses, c.Bonus)
+					explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("%s (%d)", string(c.Char), letterScore))
 				}
 			}
 		}
@@ -476,10 +478,10 @@ func (r *PlacementResult) score() (int, [][]string) {
 			switch b {
 			case DoubleWordScoreType:
 				wordTotal = wordTotal * 2
-				explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("[*2]"))
+				explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("[x2]"))
 			case TripleWordScoreType:
 				wordTotal = wordTotal * 3
-				explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("[*3]"))
+				explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("[x3]"))
 			}
 		}
 		total = total + wordTotal
