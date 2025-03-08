@@ -43,9 +43,10 @@ const (
 )
 
 type Cell struct {
-	Index int
-	Char  rune
-	Bonus CellBonusType
+	Index       int
+	Char        rune
+	Coordinates [2]int
+	Bonus       CellBonusType
 }
 
 func (c Cell) Empty() bool {
@@ -64,7 +65,7 @@ func (c Cell) LetterScoreString() string {
 	return fmt.Sprintf("%d", LetterScores[c.Char])
 }
 
-type Overlap struct {
+type Neighbours struct {
 	L bool // left
 	R bool // right
 	A bool // above
@@ -85,10 +86,14 @@ func (b Board) getNextVerticalCellId(cellID int64, offset int) int64 {
 	// no need to check if the word spans multiple columns because the IDs go from L2R.
 	// if the offset is negative then move backwards.
 	verticalOffset := int64(len(b) * offset)
-	if offset < 0 {
-		verticalOffset = 0 - verticalOffset
+
+	nextCell := cellID + verticalOffset
+
+	// is the next cell within the board?
+	if nextCell < 1 || math.Ceil(float64(nextCell)/float64(len(b))) > float64(len(b)) {
+		return -1
 	}
-	return cellID + verticalOffset
+	return nextCell
 }
 
 func (b Board) getNextHorizontalCellId(cellID int64, offset int) int64 {
@@ -137,7 +142,15 @@ func (b Board) isValidWordPlacement(placement Placement, word string, firstWord 
 			result.LettersSpent = append(result.LettersSpent, letter)
 		}
 
-		thisCell := Cell{Index: cell.Index, Char: letter, Bonus: cell.Bonus}
+		thisCell := Cell{
+			Index:       cell.Index,
+			Char:        letter,
+			Coordinates: cell.Coordinates,
+		}
+		// the bonus is only valid for the original letter on that square
+		if !isOverlapping {
+			thisCell.Bonus = cell.Bonus
+		}
 
 		// add to result
 		result.Cells = append(
@@ -317,12 +330,12 @@ func (b Board) SetCell(cellID int64, letter rune) (Cell, bool) {
 	return cell, set
 }
 
-func (b Board) nonEmptyNeighbouringCells(cellID int64) Overlap {
-	return Overlap{
-		L: b.GetCell(cellID-1, CellFull) != nil,
-		R: b.GetCell(cellID+1, CellFull) != nil,
-		A: b.GetCell(cellID-int64(len(b)), CellFull) != nil,
-		B: b.GetCell(cellID+int64(len(b)), CellFull) != nil,
+func (b Board) nonEmptyNeighbouringCells(cellID int64) Neighbours {
+	return Neighbours{
+		L: b.GetCell(b.getNextHorizontalCellId(cellID, -1), CellFull) != nil,
+		R: b.GetCell(b.getNextHorizontalCellId(cellID, 1), CellFull) != nil,
+		A: b.GetCell(b.getNextVerticalCellId(cellID, -1), CellFull) != nil,
+		B: b.GetCell(b.getNextVerticalCellId(cellID, 1), CellFull) != nil,
 	}
 }
 
@@ -332,7 +345,12 @@ func (b Board) getCenterCellIdx() int64 {
 	return int64(middle + (size * math.Floor(size/float64(2))))
 }
 
-func NewBoard(size int) Board {
+type InitialWord struct {
+	Placement Placement
+	Word      string
+}
+
+func NewBoard(size int, initialWords ...InitialWord) Board {
 	grid := make(Board, size)
 	for y := range size {
 		grid[y] = make([]Cell, size)
@@ -341,12 +359,18 @@ func NewBoard(size int) Board {
 	for rowNum := range grid {
 		for colNum := range grid[rowNum] {
 			grid[rowNum][colNum].Index = index
+			grid[rowNum][colNum].Coordinates = [2]int{rowNum, colNum}
 
 			if bonus, ok := StandardBonusMap[index]; ok {
 				grid[rowNum][colNum].Bonus = bonus
 			}
 
 			index++
+		}
+	}
+	for _, v := range initialWords {
+		if _, err := grid.placeWord(v.Placement, v.Word); err != nil {
+			// just drop invalid words
 		}
 	}
 	return grid
@@ -394,41 +418,68 @@ type PlacementResult struct {
 	Touching     [][]Cell
 }
 
+func (r *PlacementResult) ExplainScore() []string {
+	_, e := r.score()
+	wordExplanations := []string{}
+	for _, v := range e {
+		wordExplanations = append(wordExplanations, strings.Join(v, " "))
+	}
+	return wordExplanations
+}
+
 func (r *PlacementResult) Score() int {
+	s, _ := r.score()
+	return s
+}
+
+func (r *PlacementResult) score() (int, [][]string) {
 	total := 0
 	words := [][]Cell{r.Cells}
 	if len(r.Touching) > 0 {
 		words = append(words, r.Touching...)
 	}
-	for _, word := range words {
-		if len(word) == 1 {
-			continue
-		}
+
+	explanation := make([][]string, len(words))
+	for wordIdx, word := range words {
 		var wordTotal int
 		var wordBonuses []CellBonusType
+
+		// only the word can score bonuses, not the touching words
+		allowBonuses := false
+		if wordIdx == 0 {
+			allowBonuses = true
+		}
+
 		for _, c := range word {
 			letterScore := LetterScores[c.Char]
-			switch c.Bonus {
-			case NoBonusType:
-				wordTotal += letterScore
-			case DoubleLetterScoreType:
-				wordTotal += letterScore * 2
-			case TripleLetterScoreType:
-				wordTotal += letterScore * 3
-			case DoubleWordScoreType:
-				wordTotal += letterScore
-				wordBonuses = append(wordBonuses, c.Bonus)
-			case TripleWordScoreType:
-				wordTotal += letterScore
-				wordBonuses = append(wordBonuses, c.Bonus)
+			if allowBonuses {
+				switch c.Bonus {
+				case NoBonusType:
+					wordTotal += letterScore
+					explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("%s (%d)", string(c.Char), letterScore))
+				case DoubleLetterScoreType:
+					wordTotal += letterScore * 2
+					explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("%s (%d*2)", string(c.Char), letterScore))
+				case TripleLetterScoreType:
+					wordTotal += letterScore * 3
+					explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("%s (%d*3)", string(c.Char), letterScore))
+				case DoubleWordScoreType:
+					wordTotal += letterScore
+					wordBonuses = append(wordBonuses, c.Bonus)
+				case TripleWordScoreType:
+					wordTotal += letterScore
+					wordBonuses = append(wordBonuses, c.Bonus)
+				}
 			}
 		}
 		for _, b := range wordBonuses {
 			switch b {
 			case DoubleWordScoreType:
 				wordTotal = wordTotal * 2
+				explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("[*2]"))
 			case TripleWordScoreType:
 				wordTotal = wordTotal * 3
+				explanation[wordIdx] = append(explanation[wordIdx], fmt.Sprintf("[*3]"))
 			}
 		}
 		total = total + wordTotal
@@ -436,5 +487,5 @@ func (r *PlacementResult) Score() int {
 	if len(r.LettersSpent) == NumPlayerLetters {
 		total += 50
 	}
-	return total
+	return total, explanation
 }
